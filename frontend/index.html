@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>TREX</title>
+<style>
+:root{--bg:#e8edf1;--ink:#101826;--claw:#e4372b;--moss:#2f6b4f;--line:#c5cfd8;--card:#f6f8fa;color-scheme:light}
+@media(prefers-color-scheme:dark){:root{--bg:#0f1720;--ink:#e6ecf2;--line:#2a3745;--card:#16212c;color-scheme:dark}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 "Avenir Next","Segoe UI",system-ui,sans-serif;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+header{display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--line)}
+.logo{font:800 26px/1 "Avenir Next Condensed","Arial Narrow",Impact,sans-serif;letter-spacing:.02em;cursor:pointer}.logo i{color:var(--claw);font-style:normal}
+main{max-width:1100px;margin:0 auto;padding:18px}h1{font-size:clamp(28px,6vw,48px);line-height:1.05;margin:.6em 0 .3em;max-width:14em}
+.row{display:flex;gap:8px;flex-wrap:wrap}input[type=text]{flex:1;min-width:220px;padding:14px;border:2px solid var(--ink);border-radius:10px;background:var(--card);color:var(--ink);font:inherit}
+button,.pill{font:inherit;cursor:pointer;border:2px solid var(--ink);background:var(--card);color:var(--ink);border-radius:10px;padding:10px 14px}
+button.go{background:var(--claw);border-color:var(--claw);color:#fff;font-weight:700}button:focus-visible,input:focus-visible{outline:3px solid var(--moss);outline-offset:2px}
+.drop{margin-top:14px;border:2px dashed var(--ink);border-radius:14px;padding:34px;text-align:center}.drop.on{background:var(--card);border-color:var(--claw)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}
+.clip{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}.clip video{width:100%;aspect-ratio:16/9;background:#000;display:block;cursor:pointer}
+.clip .b{padding:10px 12px}.tag{font-size:13px;opacity:.8}.pills{display:flex;gap:6px;margin-top:8px}
+.pill{border-radius:999px;padding:4px 14px;font-size:13px;font-weight:700}.pill.p{border-color:var(--moss);color:var(--moss)}.pill.pm{border-color:var(--claw);color:var(--claw)}.pill.ms{background:var(--ink);color:var(--bg)}
+.ed{display:grid;grid-template-columns:minmax(240px,300px) 1fr;gap:16px}@media(max-width:760px){.ed{grid-template-columns:1fr}}
+canvas{width:100%;max-width:300px;aspect-ratio:9/16;background:#000;border-radius:12px;display:block}
+.src{position:relative;margin:10px 0}.src video{width:100%;display:block;border-radius:8px}
+.bx{position:absolute;border:2px solid;touch-action:none;cursor:move}.bx.f{border-color:var(--claw)}.bx.g{border-color:#2f9bff}.bx b{position:absolute;right:-1px;bottom:-1px;width:16px;height:16px;background:currentColor;cursor:nwse-resize}.bx.f{color:var(--claw)}.bx.g{color:#2f9bff}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}.tabs button.on{background:var(--ink);color:var(--bg)}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px}.panel label{display:block;margin:6px 0}
+.sw{display:inline-block;width:22px;height:22px;border-radius:50%;vertical-align:middle;margin-right:6px;border:2px solid var(--ink)}
+.tl{margin-top:14px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px;position:relative;touch-action:none}
+.tr{position:relative;height:24px;margin:4px 0 4px 64px;background:var(--bg);border-radius:6px}.tr span.n{position:absolute;left:-64px;font-size:12px;top:3px}
+.it{position:absolute;top:2px;bottom:2px;border-radius:5px;min-width:6px;font-size:10px;padding:0 3px;overflow:hidden;color:#fff;white-space:nowrap}
+.ph{position:absolute;top:0;bottom:0;width:2px;background:var(--claw);left:64px;pointer-events:none}
+#log{height:150px;overflow:auto;font-size:14px;margin-bottom:8px}#log div{margin:4px 0}#log .u{color:var(--moss);font-weight:600}
+.hide{display:none}.err{color:var(--claw);font-weight:600}
+</style></head><body>
+<header><div class="logo" onclick="show('home')">TRE<i>X</i></div><span class="tag">Livestream to Reels &amp; Shorts</span></header>
+<main>
+<section id="home">
+  <h1>Turn long streams into clips people finish watching.</h1>
+  <div class="row"><input id="url" type="text" placeholder="Paste a YouTube, Twitch, or Kick link" aria-label="Stream URL"><button class="go" onclick="ingest()">Find clips</button></div>
+  <div class="drop" id="drop" tabindex="0">Drop a screen recording here (MP4, MOV, WebM) or <u>choose a file</u><input id="file" type="file" accept="video/mp4,video/quicktime,video/webm" hidden></div>
+  <p id="st" class="tag"></p>
+</section>
+<section id="results" class="hide"><h2 id="rh"></h2><div class="grid" id="grid"></div></section>
+<section id="editor" class="hide">
+  <div class="row"><button onclick="show('results')">Back to clips</button><button class="go" onclick="exp()">Export 9:16 MP4</button><button onclick="share()">Save to Gallery / Files</button><span id="ex" class="tag"></span></div><br>
+  <div class="ed">
+    <div><canvas id="cv" width="540" height="960"></canvas><div class="row" style="margin-top:8px"><button onclick="V.paused?V.play():V.pause()">Play / Pause</button></div></div>
+    <div>
+      <div class="tabs" id="tabs"></div>
+      <div class="panel" id="panel"></div>
+      <div class="src" id="srcbox"><video id="v" playsinline controls></video><div class="bx f" id="bf"><b></b></div><div class="bx g" id="bg"><b></b></div></div>
+    </div>
+  </div>
+  <div class="tl" id="tl"><div class="ph" id="ph"></div><div id="trs"></div></div>
+</section>
+</main>
+<script>
+const $=s=>document.querySelector(s),V=$('#v');
+const J=(p,o)=>fetch('/api'+p,o).then(async r=>{const j=await r.json();if(!r.ok)throw Error(j.detail||'Request failed');return j});
+let job,C,E,D=30,tab='Layout',SFX=[],busy=0;
+const COL={white:'#fff',yellow:'#ffd400',green:'#50ff7a',pink:'#ff64c8'};
+const fmt=t=>Math.floor(t/60)+':'+String(Math.floor(t%60)).padStart(2,'0');
+function show(s){['home','results','editor'].forEach(x=>$('#'+x).classList.toggle('hide',x!=s));V.pause()}
+const drop=$('#drop'),fi=$('#file');drop.onclick=()=>fi.click();drop.onkeydown=e=>e.key=='Enter'&&fi.click();
+drop.ondragover=e=>{e.preventDefault();drop.classList.add('on')};drop.ondragleave=()=>drop.classList.remove('on');
+drop.ondrop=e=>{e.preventDefault();drop.classList.remove('on');ingest(e.dataTransfer.files[0])};fi.onchange=()=>ingest(fi.files[0]);
+async function ingest(f){
+  const fd=new FormData();if(f instanceof File)fd.append('file',f);else fd.append('url',$('#url').value.trim());
+  $('#st').className='tag';$('#st').textContent='Uploading…';
+  try{let j=await J('/ingest',{method:'POST',body:fd});
+    while(j.status!='done'){if(j.status=='error')throw Error(j.error);$('#st').textContent=j.status=='analyzing'?'Scoring audio spikes, chat velocity and transcript…':'Downloading…';await new Promise(r=>setTimeout(r,1500));j=await J('/jobs/'+j.id)}
+    job=j;SFX=await J('/sfx');results()}catch(e){$('#st').className='err';$('#st').textContent=e.message}
+}
+function results(){
+  $('#rh').textContent=job.clips.length+' clips worth posting'+(job.demo?' (demo video: the link could not be downloaded)':'');
+  $('#grid').innerHTML=job.clips.map(c=>`<div class="clip"><video src="${job.src}#t=${c.start},${c.end}" preload="metadata" muted onclick="open_(${c.id},'')" onmouseenter="this.play()" onmouseleave="this.pause()"></video>
+  <div class="b"><b>${fmt(c.start)}–${fmt(c.end)}</b> · score ${c.score}<div class="tag">${c.why.join(', ')}</div>
+  <div class="pills"><button class="pill p" onclick="open_(${c.id},'Pro')">Pro</button><button class="pill pm" onclick="open_(${c.id},'ProMax')">ProMax</button><button class="pill ms" onclick="open_(${c.id},'MaxS')">MaxS</button></div></div></div>`).join('');
+  show('results')}
+function open_(id,mode){
+  C=job.clips[id];D=C.end-C.start;
+  E={split:false,face:[.7,.04,.28,.3],game:[0,0,.68,1],crop:[.3,0,.4,1],captions:'off',enhance:false,speed:[],sfx:[],blur:[],replay:[]};
+  if(mode=='Pro'||mode=='ProMax'){E.split=true;E.captions='yellow'}
+  if(mode=='ProMax'){E.enhance=true;const n=SFX.filter(s=>s!='ding');E.sfx=C.peaks.map((t,i)=>({t,name:n[i%n.length]}))}
+  tab=mode=='MaxS'?'AI Chat':'Layout';V.src=job.src;V.onloadedmetadata=()=>{V.currentTime=C.start};
+  $('#tabs').innerHTML=['Layout','Speed','SFX','Captions','Blur & FX','AI Chat'].map(t=>`<button onclick="tab='${t}';panel()">${t}</button>`).join('');
+  show('editor');panel();boxes();tl();V.play().catch(()=>{})}
+V.ontimeupdate=()=>{const t=V.currentTime-C.start;if(V.currentTime>=C.end||t<-.3){V.currentTime=C.start}
+  const s=E.speed.find(s=>t>=s.from&&t<s.to);V.playbackRate=s?s.rate:1;$('#ph').style.left=`calc(64px + (100% - 74px) * ${Math.max(0,t)/D})`};
+function panel(){
+  [...$('#tabs').children].forEach(b=>b.classList.toggle('on',b.textContent==tab));const p=$('#panel');
+  const num=(id,v,mx)=>`<input id="${id}" type="number" step=".1" min="0" max="${mx}" value="${v}" style="width:70px">`;
+  if(tab=='Layout')p.innerHTML=`<label><input type="checkbox" ${E.split?'checked':''} onchange="E.split=this.checked;boxes();tl()"> Streamer split-screen: facecam large on top (red box), gameplay underneath (blue box)</label><div class="tag">Drag a box to move it, drag the corner to resize. With split off, the red box is the general crop.</div>`;
+  if(tab=='Speed')p.innerHTML=`<div class="tag">0.5x to 2x for the whole clip or a time range (seconds into the clip, 0–${D}).</div>From ${num('s1',0,D)} to ${num('s2',D,D)} at <input id="sr" type="range" min=".5" max="2" step=".25" value="1" oninput="$('#sv').textContent=this.value+'x'"> <b id="sv">1x</b> <button onclick="addSpeed()">Apply</button> <button onclick="E.speed=[];tl()">Clear</button>`;
+  if(tab=='SFX')p.innerHTML=`<div class="row"><select id="sn">${SFX.map(s=>`<option>${s}</option>`)}</select> at ${num('st',0,D)}s <button onclick="E.sfx.push({t:+$('#st').value,name:$('#sn').value});tl()">Add</button> <button onclick="E.sfx=[];tl()">Clear</button></div><br><label>Custom sound: <input type="file" accept="audio/*" onchange="upSfx(this.files[0])"></label>`;
+  if(tab=='Captions')p.innerHTML=`<div class="row"><button onclick="E.captions='off'">Off</button>${Object.keys(COL).map(c=>`<button onclick="E.captions='${c}'"><span class="sw" style="background:${COL[c]}"></span>${c}</button>`).join('')}</div>`;
+  if(tab=='Blur & FX')p.innerHTML=`<label><input type="checkbox" ${E.enhance?'checked':''} onchange="E.enhance=this.checked"> Enhance quality (sharpen, contrast, color)</label>
+   <div class="row">Blur box at x,y,w,h (0–1) <input id="bb" value=".3,.4,.4,.2" style="width:130px"> from ${num('b1',0,D)} to ${num('b2',3,D)} <button onclick="addBlur()">Add blur</button></div><br>
+   <div class="row">Quick replay at ${num('rt',0,D)}s for ${num('rl',2,5)}s <button onclick="E.replay.push({t:+$('#rt').value,len:+$('#rl').value});tl()">Add replay</button> <button onclick="E.blur=[];E.replay=[];tl()">Clear FX</button></div>`;
+  if(tab=='AI Chat')p.innerHTML=`<div id="log"><div>Tell me what to change. Try: “Make it 0.5x from 0:10 to 0:13”, “Add airhorn at 0:05”, “Blur the chat”, “Replay this moment”, “Enhance the quality”.</div></div><div class="row"><input type="text" id="ct" placeholder="Describe an edit"><button class="go" onclick="say()">Run</button></div>`;
+  if(tab=='AI Chat')$('#ct').onkeydown=e=>e.key=='Enter'&&say()}
+const addSpeed=()=>{E.speed.push({from:+$('#s1').value,to:+$('#s2').value,rate:+$('#sr').value});tl()};
+const addBlur=()=>{const b=$('#bb').value.split(',').map(Number);E.blur.push({box:b,from:+$('#b1').value,to:+$('#b2').value,k:20});tl()};
+async function upSfx(f){const fd=new FormData();fd.append('file',f);const r=await J('/sfx',{method:'POST',body:fd});SFX=await J('/sfx');E.sfx.push({t:0,name:r.name});tl();panel()}
+async function say(){const t=$('#ct').value;if(!t)return;$('#ct').value='';const l=$('#log');l.innerHTML+=`<div class="u">${t.replace(/</g,'&lt;')}</div>`;
+  const r=await J('/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:t,start:C.start,length:D})});
+  r.actions.forEach(a=>({speed:()=>E.speed.push({from:a.from,to:a.to,rate:a.rate}),replay:()=>E.replay.push({t:a.t,len:a.len}),blur:()=>E.blur.push({box:a.box,from:a.from,to:a.to,k:a.k}),enhance:()=>E.enhance=true,captions:()=>E.captions=a.style,sfx:()=>E.sfx.push({t:a.t,name:a.name}),split:()=>{E.split=true;boxes()}})[a.type]());
+  l.innerHTML+=`<div>${r.reply}</div>`;l.scrollTop=1e9;tl()}
+function boxes(){[['bf','face','crop'],['bg','game']].forEach(([id,k,k2])=>{const el=$('#'+id),key=()=>E.split?k:(k2||k);el.style.display=(id=='bg'&&!E.split)?'none':'block';
+  const put=()=>{const b=E[key()];Object.assign(el.style,{left:b[0]*100+'%',top:b[1]*100+'%',width:b[2]*100+'%',height:b[3]*100+'%'})};put();
+  el.onpointerdown=ev=>{ev.preventDefault();const r=$('#srcbox').getBoundingClientRect(),rs=ev.target.tagName=='B',b0=[...E[key()]],x0=ev.clientX,y0=ev.clientY;el.setPointerCapture(ev.pointerId);
+    el.onpointermove=m=>{const dx=(m.clientX-x0)/r.width,dy=(m.clientY-y0)/r.height,b=E[key()];
+      if(rs){b[2]=Math.min(1-b[0],Math.max(.05,b0[2]+dx));b[3]=Math.min(1-b[1],Math.max(.05,b0[3]+dy))}else{b[0]=Math.min(1-b[2],Math.max(0,b0[0]+dx));b[1]=Math.min(1-b[3],Math.max(0,b0[1]+dy))}put()};
+    el.onpointerup=()=>el.onpointermove=null}})}
+function tl(){const bar=(a,b,c,l)=>`<div class="it" style="left:${a/D*100}%;width:${Math.max(.5,(b-a)/D*100)}%;background:${c}">${l}</div>`;
+  const tr=(n,h)=>`<div class="tr"><span class="n">${n}</span>${h}</div>`;
+  $('#trs').innerHTML=tr('Clip',bar(0,D,'#556',fmt(C.start)+'–'+fmt(C.end)))+tr('Speed',E.speed.map(s=>bar(s.from,s.to,'#2f6b4f',s.rate+'x')).join(''))+tr('SFX',E.sfx.map(s=>bar(s.t,s.t+1,'#e4372b',s.name)).join(''))+tr('Blur',E.blur.map(s=>bar(s.from,s.to,'#2f9bff','blur')).join(''))+tr('Replay',E.replay.map(s=>bar(s.t,s.t+s.len,'#b8860b','replay')).join(''))}
+$('#tl').onpointerdown=e=>{const r=$('#tl').getBoundingClientRect(),f=(e.clientX-r.left-74)/(r.width-84);V.currentTime=C.start+Math.min(1,Math.max(0,f))*D};
+const cv=$('#cv'),x=cv.getContext('2d');
+(function draw(){const W=cv.width,H=cv.height,w=V.videoWidth,h=V.videoHeight;
+  if(w&&C){const d=(b,dx,dy,dw,dh)=>x.drawImage(V,b[0]*w,b[1]*h,b[2]*w,b[3]*h,dx,dy,dw,dh);
+    if(E.split){d(E.face,0,0,W,H*.6);d(E.game,0,H*.6,W,H*.4)}else d(E.crop,0,0,W,H);
+    const t=V.currentTime-C.start;E.blur.filter(b=>t>=b.from&&t<=b.to).forEach(b=>{x.fillStyle='rgba(120,140,160,.75)';x.fillRect(b.box[0]*W,b.box[1]*H,b.box[2]*W,b.box[3]*H)});
+    if(E.captions!='off'){x.font='800 44px Arial';x.textAlign='center';x.lineWidth=8;x.strokeStyle='#000';x.fillStyle=COL[E.captions];x.strokeText('CAPTIONS ON',W/2,H*.86);x.fillText('CAPTIONS ON',W/2,H*.86)}
+    if(E.enhance){x.fillStyle='rgba(255,255,255,.03)';x.fillRect(0,0,W,H)}}
+  requestAnimationFrame(draw)})();
+let last;async function exp(){$('#ex').textContent='Rendering with FFmpeg…';
+  try{const r=await J('/render',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({job:job.id,start:C.start,end:C.end,...E})});
+    last=r.url;$('#ex').textContent='Done.';const a=document.createElement('a');a.href=r.url;a.download='trex-clip.mp4';a.click()}catch(e){$('#ex').className='err';$('#ex').textContent=e.message}}
+async function share(){if(!last)await exp();if(!last)return;const b=await (await fetch(last)).blob(),f=new File([b],'trex-clip.mp4',{type:'video/mp4'});
+  if(navigator.canShare&&navigator.canShare({files:[f]}))navigator.share({files:[f],title:'TREX clip'}).catch(()=>{});else{$('#ex').textContent='Sharing isn’t supported here, so the file was downloaded instead.';const a=document.createElement('a');a.href=last;a.download='trex-clip.mp4';a.click()}}
+</script></body></html>
