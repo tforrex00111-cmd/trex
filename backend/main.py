@@ -2,7 +2,8 @@
 import json, re, shutil, subprocess, uuid, wave
 from pathlib import Path
 import numpy as np
-from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -12,7 +13,13 @@ DATA.mkdir(exist_ok=True); SFX.mkdir(exist_ok=True)
 app = FastAPI(title="TREX")
 JOBS: dict = {}
 
-def run(cmd): subprocess.run(cmd, check=True, capture_output=True)
+@app.exception_handler(Exception)
+async def boom(request: Request, exc: Exception):
+    return JSONResponse({"detail": "Server error: " + str(exc)[:200]}, status_code=500)
+
+def run(cmd):
+    if cmd[0] == "ffmpeg": cmd = cmd[:1] + ["-threads", "1"] + cmd[1:]  # keep memory low on free hosting
+    subprocess.run(cmd, check=True, capture_output=True)
 
 def duration(p):
     try:
@@ -34,17 +41,17 @@ HYPE = re.compile(r"\b(lol|lmao|haha+|no way|omg|bro|what the|crazy|insane|let'?
 
 def audio_signal(src, n):
     wav = src.parent / "a.wav"
+    s = np.zeros(n)
     try:
         run(["ffmpeg", "-y", "-i", str(src), "-vn", "-ac", "1", "-ar", "16000", str(wav)])
-        with wave.open(str(wav)) as w: x = np.frombuffer(w.readframes(w.getnframes()), np.int16).astype(float)
+        with wave.open(str(wav)) as w:  # read one second at a time, never the whole file
+            for i in range(n):
+                c = np.frombuffer(w.readframes(16000), np.int16).astype(float)
+                if len(c) < 100: break
+                rms = np.sqrt((c ** 2).mean()); zcr = (np.diff(np.sign(c)) != 0).mean()
+                s[i] = rms / 3000 + zcr * 4
     except Exception:
         return np.random.default_rng(1).random(n)
-    s = np.zeros(n)
-    for i in range(n):
-        c = x[i * 16000:(i + 1) * 16000]
-        if len(c) < 100: continue
-        rms = np.sqrt((c ** 2).mean()); zcr = (np.diff(np.sign(c)) != 0).mean()
-        s[i] = rms / 3000 + zcr * 4
     return (s - s.mean()) / (s.std() + 1e-6)
 
 def chat_signal(job, n):
@@ -65,7 +72,7 @@ def transcribe(src):
         return [(t, t + 2.5, w[int(t / 3) % len(w)]) for t in np.arange(0, d, 3)]
 
 def detect(job_dir, src):
-    d = duration(src); n = int(d)
+    d = duration(src); n = int(min(d, 3600))
     tr = transcribe(src); txt = np.zeros(n)
     for a, b, t in tr:
         if HYPE.search(t) and a < n: txt[int(a)] += 1
@@ -87,30 +94,31 @@ def process(job_id, url, upload):
     j = JOBS[job_id]; d = DATA / job_id; src = d / "source.mp4"
     try:
         j["status"] = "downloading"
-        if upload: pass
-        else:
-            try: run(["yt-dlp", "-f", "best[height<=1080]/best", "--merge-output-format", "mp4", "--write-subs", "--sub-langs", "live_chat", "-o", str(d / "source.%(ext)s"), url])
+        if not upload:
+            try: run(["yt-dlp", "--no-playlist", "-f", "best[height<=720]/best", "--download-sections", "*0-900", "--merge-output-format", "mp4", "--write-subs", "--sub-langs", "live_chat", "-o", str(d / "source.%(ext)s"), url])
             except Exception:
                 run(["ffmpeg", "-y", "-f", "lavfi", "-i", "testsrc2=s=1280x720:d=120", "-f", "lavfi", "-i", "sine=frequency=300:duration=120", "-shortest", "-pix_fmt", "yuv420p", str(src)])
                 j["demo"] = True
         j["status"] = "analyzing"
         j["clips"] = detect(d, src); j["src"] = f"/media/{job_id}/source.mp4"; j["status"] = "done"
     except Exception as e:
-        j["status"], j["error"] = "error", str(e)
+        j["status"], j["error"] = "error", str(e)[:200]
 
 @app.post("/api/ingest")
 async def ingest(bg: BackgroundTasks, url: str = Form(""), file: UploadFile | None = File(None)):
     jid = uuid.uuid4().hex[:8]; d = DATA / jid; d.mkdir(); JOBS[jid] = {"id": jid, "status": "queued"}
     if file:
-        raw = d / ("raw" + Path(file.filename).suffix); raw.write_bytes(await file.read())
-        run(["ffmpeg", "-y", "-i", str(raw), "-c:v", "libx264", "-preset", "veryfast", "-c:a", "aac", str(d / "source.mp4")])
+        raw = d / ("raw" + Path(file.filename).suffix)
+        with open(raw, "wb") as out: shutil.copyfileobj(file.file, out)  # stream to disk, not memory
+        run(["ffmpeg", "-y", "-i", str(raw), "-vf", "scale=-2:'min(720,ih)'", "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac", str(d / "source.mp4")])
+        raw.unlink(missing_ok=True)
     elif not re.match(r"https?://(www\.)?(youtube\.com|youtu\.be|twitch\.tv|kick\.com)", url):
         raise HTTPException(400, "Paste a YouTube, Twitch, or Kick link, or upload a file.")
     bg.add_task(process, jid, url, bool(file)); return JOBS[jid]
 
 @app.get("/api/jobs/{jid}")
 def job(jid: str):
-    if jid not in JOBS: raise HTTPException(404, "Unknown job")
+    if jid not in JOBS: raise HTTPException(404, "Server restarted. Please submit your video again.")
     return JOBS[jid]
 
 @app.get("/api/sfx")
@@ -180,29 +188,10 @@ def render(e: Edit):
         srt(json.loads((d / "transcript.json").read_text()), e.start, e.end, d / "c.srt")
         st = f"FontName=Arial,Bold=1,FontSize=18,PrimaryColour=&H{COLORS.get(e.captions,'FFFFFF')}&,OutlineColour=&H000000&,Outline=3,Alignment=2,MarginV=260"
         f += f";[{last}]subtitles={d.as_posix()}/c.srt:force_style='{st}'[vc]"; last = "vc"
-    run(["ffmpeg", "-y", "-ss", str(e.start), "-t", str(L), "-i", str(src), "-filter_complex", f, "-map", f"[{last}]", "-map", "0:a?", "-c:v", "libx264", "-preset", "fast", "-pix_fmt", "yuv420p", "-c:a", "aac", str(p1)])
+    run(["ffmpeg", "-y", "-ss", str(e.start), "-t", str(L), "-i", str(src), "-filter_complex", f, "-map", f"[{last}]", "-map", "0:a?", "-c:v", "libx264", "-preset", "veryfast", "-pix_fmt", "yuv420p", "-c:a", "aac", str(p1)])
     pts = {0, L} | {x for s in e.speed for x in (s["from"], s["to"])} | {x for r in e.replay for x in (r["t"], r["t"] + r["len"])}
     pts = sorted(p for p in pts if 0 <= p <= L); segs = []
     for a, b in zip(pts, pts[1:]):
         rate = next((min(2, max(.5, s["rate"])) for s in e.speed if s["from"] <= a and b <= s["to"]), 1.0); segs.append((a, b, rate))
         if any(abs(r["t"] + r["len"] - b) < 1e-6 for r in e.replay):
-            r = next(r for r in e.replay if abs(r["t"] + r["len"] - b) < 1e-6); segs.append((r["t"], b, 2.0))
-    fc = ";".join(f"[0:v]trim={a}:{b},setpts=(PTS-STARTPTS)/{r}[v{i}];[0:a]atrim={a}:{b},asetpts=PTS-STARTPTS,atempo={r}[a{i}]" for i, (a, b, r) in enumerate(segs))
-    fc += ";" + "".join(f"[v{i}][a{i}]" for i in range(len(segs))) + f"concat=n={len(segs)}:v=1:a=1[V][A]"
-    def omap(t):
-        o = 0
-        for a, b, r in segs:
-            if a <= t < b: return o + (t - a) / r
-            o += (b - a) / r
-        return o
-    ins, mix = ["-i", str(p1)], ["[A]"]
-    for e_s in e.sfx:
-        sp = sfx_path(e_s["name"])
-        if not sp: continue
-        ins += ["-i", str(sp)]; k = len(mix); ms = int(omap(e_s["t"]) * 1000); fc += f";[{k}:a]adelay={ms}|{ms}[s{k}]"; mix.append(f"[s{k}]")
-    fc += f";{''.join(mix)}amix=inputs={len(mix)}:duration=first:normalize=0[AO]" if len(mix) > 1 else ";[A]anull[AO]"
-    run(["ffmpeg", "-y", *ins, "-filter_complex", fc, "-map", "[V]", "-map", "[AO]", "-c:v", "libx264", "-preset", "fast", "-crf", "18", "-pix_fmt", "yuv420p", "-c:a", "aac", "-movflags", "+faststart", str(out)])
-    return {"url": f"/media/{e.job}/{out.name}"}
-
-app.mount("/media", StaticFiles(directory=DATA), name="media")
-app.mount("/", StaticFiles(directory=WEB, html=True), name="web")
+            r = next(r for r in e.replay if abs(r["t"] + r["len"] - b)
